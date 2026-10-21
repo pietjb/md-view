@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edit: __TITLE__</title>
+<link rel="stylesheet" href="/assets/toastui-editor.css">
+<link rel="stylesheet" href="/assets/toastui-editor-dark.css">
+<style>
+  :root { --bg: #ffffff; --fg: #1f2328; --bar: #f6f8fa; --line: #d0d7de; --muted: #59636e;
+          --accent: #0969da; --accent-fg: #ffffff; --warn-bg: #fff8c5; --warn-line: #d4a72c;
+          --ok: #1a7f37; --dirty: #9a6700; --seg: #eaeef2; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121212; --fg: #e6edf3; --bar: #151b23; --line: #3d444d; --muted: #9198a1;
+            --accent: #4493f8; --accent-fg: #0d1117; --warn-bg: #2e2a1a; --warn-line: #9e6a03;
+            --ok: #3fb950; --dirty: #d29922; --seg: #262c36; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg);
+         font: 14px/1.4 -apple-system, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+           background: var(--bar); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .name { font-weight: 600; }
+  .path { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .status { font-size: 12px; color: var(--muted); }
+  .status.saved { color: var(--ok); } .status.dirty { color: var(--dirty); }
+  button { font: inherit; padding: 5px 14px; border-radius: 6px; border: 1px solid var(--line);
+           background: var(--bg); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .modes { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--seg); border: 1px solid var(--line); }
+  .modes button { border: 0; background: transparent; color: var(--muted); padding: 3px 12px; font-size: 13px; }
+  .modes button[aria-pressed="true"] { background: var(--bg); color: var(--fg); font-weight: 600;
+                                       box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
+  .banner { display: none; align-items: center; gap: 12px; padding: 8px 16px; flex-wrap: wrap;
+            background: var(--warn-bg); border-bottom: 1px solid var(--warn-line); }
+  .banner.show { display: flex; }
+  .banner span { flex: 1; min-width: 200px; }
+  .front { border-bottom: 1px solid var(--line); background: var(--bar); padding: 6px 16px; }
+  .front summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .mono { font: 13px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; font-variant-ligatures: none; }
+  .front textarea { display: block; width: 100%; margin: 6px 0 4px; padding: 8px; resize: vertical;
+                    background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; }
+  #visual { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #editor { flex: 1; min-height: 0; }
+  #viewer { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 25px; background: var(--bg); }
+  #viewer .toastui-editor-contents { font-size: 14px; }
+  .lock { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; font-size: 13px; }
+  .lock svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  .lock[aria-pressed="true"] { color: var(--muted); }
+  .lock[aria-pressed="false"] { border-color: var(--dirty); color: var(--dirty); }
+  .front textarea[readonly] { color: var(--muted); }
+  #text { flex: 1; min-height: 0; width: 100%; margin: 0; padding: 16px 24px; border: 0; outline: none; resize: none;
+          background: var(--bg); color: var(--fg); tab-size: 4; white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; }
+  [hidden] { display: none !important; }
+  .toastui-editor-defaultUI { border: 0 !important; border-radius: 0 !important; }
+</style>
+</head>
+<body>
+<header>
+  <span class="name" id="name">__TITLE__</span>
+  <span class="path" id="path"></span>
+  <span class="modes" role="group" aria-label="Editor">
+    <button id="modeText" aria-pressed="false" title="The file exactly as it is on disk">Text</button>
+    <button id="modeMarkdown" aria-pressed="true" title="Visual Markdown editor">Markdown</button>
+  </span>
+  <button class="lock" id="lock" aria-pressed="true" title="Locked: view only. Click to edit">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path id="shackle" d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    <span id="lockLabel">View only</span>
+  </button>
+  <span class="status" id="status">Loading…</span>
+  <button class="primary" id="save" disabled title="Save (Ctrl+S)">Save</button>
+</header>
+<div class="banner" id="banner">
+  <span id="bannerText">This file was changed on disk since you opened it.</span>
+  <button id="reload">Load the version on disk</button>
+  <button id="overwrite">Keep my edits and overwrite</button>
+</div>
+<textarea id="text" class="mono" spellcheck="false" hidden aria-label="File text"></textarea>
+<div id="visual">
+  <details class="front" id="frontBox" hidden>
+    <summary>Front matter (YAML)</summary>
+    <textarea id="front" class="mono" spellcheck="false" rows="6"></textarea>
+  </details>
+  <div id="editor" hidden></div>
+  <div id="viewer"></div>
+</div>
+<script src="/assets/toastui-editor-all.min.js"></script>
+<script src="/assets/restore-style.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+
+  // Two views of one file. Text: the whole file as it is, saved exactly as
+  // typed. Markdown: the visual editor over the body, front matter in its own
+  // box, saved through restore-style.js so the file keeps its own style.
+  // originalBody is the body the visual editor was last filled from;
+  // visualEdited says whether the visual side changed since then.
+  // The Markdown view is locked (a read-only Viewer) whenever it is shown,
+  // until the person unlocks it.
+  let editor, viewer, mode = 'markdown', locked = true, baseMtime = 0, dirty = false, loading = false;
+  let crlf = false, originalBody = '', visualEdited = false;
+
+  const FRONT = /^(---\n[\s\S]*?\n---)(\n|$)/;
+  const splitFront = text => {
+    const m = FRONT.exec(text);
+    return m ? { front: m[1], body: text.slice(m[0].length).replace(/^\n/, '') } : { front: null, body: text };
+  };
+
+  const setStatus = (text, kind) => { $('status').textContent = text; $('status').className = 'status ' + (kind || ''); };
+  const setDirty = value => {
+    dirty = value;
+    $('save').disabled = !value;
+    setStatus(value ? 'Unsaved changes' : 'Saved', value ? 'dirty' : 'saved');
+  };
+  const showConflict = text => { $('bannerText').textContent = text; $('banner').classList.add('show'); };
+  const hideConflict = () => $('banner').classList.remove('show');
+
+  // Fills the visual side from whole-file text (always "\n" line endings).
+  const fillVisual = text => {
+    const { front, body } = splitFront(text);
+    originalBody = body;
+    $('frontBox').hidden = front === null;
+    $('front').value = front ?? '';
+    loading = true;
+    if (editor) editor.setMarkdown(body, false);
+    else editor = new toastui.Editor({
+      el: $('editor'), height: '100%', initialEditType: 'wysiwyg', previewStyle: 'vertical', hideModeSwitch: true,
+      initialValue: body, usageStatistics: false, theme: dark ? 'dark' : 'light', autofocus: false,
+      events: { change: () => { if (!loading) { visualEdited = true; setDirty(true); } } },
+    });
+    loading = false;
+    visualEdited = false;
+    if (locked) renderViewer();
+  };
+
+  // The Viewer shows the body as loaded, or the visual edits when there are some.
+  const renderViewer = () => {
+    const body = visualEdited ? editor.getMarkdown() : originalBody;
+    if (viewer) viewer.setMarkdown(body);
+    else {
+      viewer = toastui.Editor.factory({
+        el: $('viewer'), viewer: true, initialValue: body, usageStatistics: false, theme: dark ? 'dark' : 'light',
+      });
+      if (dark) $('viewer').classList.add('toastui-editor-dark');
+    }
+  };
+
+  const setLocked = value => {
+    locked = value;
+    if (locked) renderViewer();
+    $('viewer').hidden = !locked;
+    $('editor').hidden = locked;
+    $('front').readOnly = locked;
+    $('lock').setAttribute('aria-pressed', String(locked));
+    $('lockLabel').textContent = locked ? 'View only' : 'Editing';
+    $('lock').title = locked ? 'Locked: view only. Click to edit' : 'Editing. Click to lock';
+    $('shackle').setAttribute('d', locked ? 'M8 11V7a4 4 0 0 1 8 0v4' : 'M8 11V7a4 4 0 0 1 7.6-1.8');
+  };
+
+  // Whole-file text from the visual side, or an error when it cannot be built.
+  const textFromVisual = () => {
+    const front = $('frontBox').hidden ? null : $('front').value.replace(/\r\n/g, '\n').replace(/\s+$/, '');
+    if (front !== null && !/^---\n[\s\S]*\n---$/.test(front)) {
+      return { error: 'front matter must start and end with a --- line' };
+    }
+    let text = (front !== null ? front + '\n\n' : '') + mdRestore.restoreStyle(editor.getMarkdown(), originalBody);
+    if (originalBody.endsWith('\n') && !text.endsWith('\n')) text += '\n';
+    return { text };
+  };
+
+  const setMode = next => {
+    if (next === mode) return;
+    if (next === 'text') {
+      // Only rebuild the text when the visual side changed, so the file is
+      // never reformatted just by looking at it.
+      if (visualEdited) {
+        const built = textFromVisual();
+        if (built.error) { setStatus('Cannot switch: ' + built.error, 'dirty'); return; }
+        $('text').value = built.text;
+      }
+    } else {
+      locked = true;
+      fillVisual($('text').value);
+      setLocked(true);
+    }
+    mode = next;
+    $('text').hidden = mode !== 'text';
+    $('visual').hidden = mode !== 'markdown';
+    $('lock').hidden = mode !== 'markdown';
+    $('modeText').setAttribute('aria-pressed', String(mode === 'text'));
+    $('modeMarkdown').setAttribute('aria-pressed', String(mode === 'markdown'));
+    try { localStorage.setItem('md-edit-mode', mode); } catch {}
+  };
+
+  const load = async () => {
+    const doc = await (await fetch('/api/doc')).json();
+    baseMtime = doc.mtime;
+    crlf = doc.text.includes('\r\n');
+    $('path').textContent = doc.path;
+    const text = doc.text.replace(/\r\n/g, '\n');
+    $('text').value = text;
+    fillVisual(text);
+    hideConflict();
+    setDirty(false);
+  };
+
+  const save = async force => {
+    if (!editor) return;
+    let text;
+    // With no visual edits the text is the source, saved as it is.
+    if (mode === 'text' || !visualEdited) text = $('text').value;
+    else {
+      const built = textFromVisual();
+      if (built.error) { setStatus('Not saved: ' + built.error, 'dirty'); return; }
+      text = built.text;
+    }
+    setStatus('Saving…');
+    const res = await fetch('/api/save', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: crlf ? text.replace(/\n/g, '\r\n') : text, baseMtime, force: !!force }),
+    });
+    if (res.status === 409) {
+      setStatus('Not saved', 'dirty');
+      showConflict('This file was changed on disk since you opened it. Saving now would overwrite that change.');
+      return;
+    }
+    if (!res.ok) { setStatus('Save failed: ' + ((await res.json()).error || res.status), 'dirty'); return; }
+    baseMtime = (await res.json()).mtime;
+    // What was saved is the new baseline for both views.
+    $('text').value = text;
+    if (mode === 'markdown') { originalBody = splitFront(text).body; visualEdited = false; }
+    else fillVisual(text);
+    hideConflict();
+    setDirty(false);
+  };
+
+  // Watch the file: reload clean views when it changes on disk (Claude editing
+  // it, say); warn instead when there are unsaved edits. The poll also keeps
+  // the server from timing out while this page is open.
+  const watch = async () => {
+    try {
+      const { mtime } = await (await fetch('/api/mtime')).json();
+      if (mtime !== baseMtime) {
+        if (!dirty) await load();
+        else showConflict('This file was changed on disk while you have unsaved edits.');
+      }
+    } catch { setStatus('Editor server stopped. Run /md-edit again.', 'dirty'); return; }
+    setTimeout(watch, 3000);
+  };
+
+  $('text').addEventListener('input', () => setDirty(true));
+  $('text').addEventListener('keydown', e => {
+    // Tab indents in the text view instead of leaving it.
+    if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      e.target.setRangeText('  ', e.target.selectionStart, e.target.selectionEnd, 'end');
+      setDirty(true);
+    }
+  });
+  $('front').addEventListener('input', () => { visualEdited = true; setDirty(true); });
+  $('lock').onclick = () => setLocked(!locked);
+  // Locked: a task box is not ticked by a click, and a link opens in a new tab
+  // so the editor page is never navigated away from.
+  $('viewer').addEventListener('mousedown', e => {
+    if (e.target.closest('li.task-list-item') && !e.target.closest('a')) e.stopPropagation();
+  }, true);
+  $('viewer').addEventListener('click', e => {
+    const a = e.target.closest('a[href]');
+    if (a) { e.preventDefault(); window.open(a.href, '_blank', 'noopener'); }
+  });
+  $('modeText').onclick = () => setMode('text');
+  $('modeMarkdown').onclick = () => setMode('markdown');
+  $('save').onclick = () => save(false);
+  $('reload').onclick = () => load();
+  $('overwrite').onclick = () => save(true);
+  addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(false); }
+  });
+  addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+  let saved = null;
+  try { saved = localStorage.getItem('md-edit-mode'); } catch {}
+  load()
+    .then(() => { setLocked(true); if (saved === 'text') setMode('text'); setTimeout(watch, 3000); })
+    .catch(err => setStatus('Could not load the file: ' + err, 'dirty'));
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "md-preview",
+  "version": "0.5.0",
+  "description": "Preview and visually edit Markdown files in Claude Desktop's browser pane",
+  "types": "./types/index.d.ts"
+}
