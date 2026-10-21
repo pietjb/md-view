@@ -3,8 +3,47 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { ViewedDoc } from '../types'
 
-// Claude Desktop's built-in browser, reached as an MCP server.
+// Claude Desktop's built-in browser: the MCP server whose tools Claude calls
+// as mcp__Claude_Browser__*. Its exact prefix can differ by setup, so the tool
+// is looked up by its ending first.
 const BROWSER = 'Claude_Browser'
+const PREVIEW_TOOL = /^mcp__.*Claude_Browser__preview_start$/
+
+const describe = (value: unknown) => {
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  return (text ?? String(value)).replace(/\s+/g, ' ').slice(0, 200)
+}
+
+// Opens url in the browser pane. Returns null when it opened, else why not.
+const openInPane = async ($: EngineInterface, url: string): Promise<string | null> => {
+  const reasons: string[] = []
+
+  // The way Claude opens it: the browser's own tool, through the tool chain.
+  const tool = (await $.tool.list()).find(t => PREVIEW_TOOL.test(t.name))
+  if (tool) {
+    try {
+      const ran = await $.tool.call({ tool: tool.name as `mcp__${string}__${string}`, url })
+      if (ran.deny !== undefined) reasons.push(`${tool.name} was refused: ${describe(ran.deny)}`)
+      else if (ran.isError) reasons.push(`${tool.name} failed: ${describe(ran.result)}`)
+      else return null
+    } catch (err) {
+      reasons.push(`${tool.name} failed: ${describe(String(err))}`)
+    }
+  } else {
+    reasons.push('no browser pane tool is available in this session')
+  }
+
+  // Directly on the server, for setups where the tool is not listed.
+  try {
+    const result = await $.mcp.call(BROWSER, 'preview_start', { url })
+    if (result.isError !== true) return null
+    reasons.push(`${BROWSER} server: ${describe(result.content)}`)
+  } catch (err) {
+    reasons.push(`${BROWSER} server: ${describe(String(err))}`)
+  }
+
+  return reasons.join('; ')
+}
 
 const doc = atom({ plugin: 'md-view', key: 'doc' } as const, null as ViewedDoc | null)
 
@@ -68,19 +107,17 @@ const view = async ($: EngineInterface, file: string) => {
   }
   await update($, doc, () => ({ file: path }))
 
-  try {
-    const result = await $.mcp.call(BROWSER, 'preview_start', { url })
-    if (result.isError !== true) return `Viewing ${baseName(path)} in the browser pane. Unlock to edit; save with Ctrl+S.`
-  } catch {
-    // Fall through to the default browser.
-  }
+  const failure = await openInPane($, url)
+  if (failure === null) return `Viewing ${baseName(path)} in the browser pane. Unlock to edit; save with Ctrl+S.`
+  $.ui.log(`md-view: browser pane not opened: ${failure}`, { to: 'debug' })
+
   const isWindows = (await $.env.get('OS')) === 'Windows_NT'
   const opener = isWindows
     ? ['explorer.exe', url]
     : [(await $.process.run(['uname'])).stdout.trim() === 'Darwin' ? 'open' : 'xdg-open', url]
   await $.process.run(opener, { timeoutMs: 10_000 }).catch(() => undefined)
 
-  return `Viewing ${baseName(path)} at ${url} (the browser pane was not available).`
+  return `Viewing ${baseName(path)} in your default browser at ${url}. The browser pane could not be opened: ${failure}`
 }
 
 export const register: Register = on => {
