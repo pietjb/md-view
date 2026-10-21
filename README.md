@@ -8,7 +8,9 @@ A Claude Code plugin to view and edit Markdown files as formatted documents, rig
 /md-view <file.md>
 ```
 
-Opens the file in the browser pane as a formatted document, view only. The path can be absolute or relative to the session's folder.
+Starts the viewer for the file and puts a request to open it in your prompt box, such as *"Open http://127.0.0.1:52344/ in the browser pane (md-view viewer for notes.md)"*. Press **Enter** to send it, and Claude opens the file in the browser pane as a formatted document, view only. The path can be absolute or relative to the session's folder.
+
+Why the extra Enter: the plugin doesn't open the pane itself. In auto mode, Claude Code allows a tool call only when you asked for it, so the plugin drafts the request and you send it. Outside Claude Desktop, where there's no browser pane, the file opens in your default browser.
 
 - `/md-view` with no file reopens the last file viewed.
 - `/md-view stop` closes the viewer's local server.

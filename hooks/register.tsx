@@ -3,46 +3,30 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { ViewedDoc } from '../types'
 
-// Claude Desktop's built-in browser: the MCP server whose tools Claude calls
-// as mcp__Claude_Browser__*. Its exact prefix can differ by setup, so the tool
-// is looked up by its ending first.
-const BROWSER = 'Claude_Browser'
+// Claude Desktop's built-in browser: the tool Claude calls as
+// mcp__Claude_Browser__preview_start (its prefix can differ by setup).
 const PREVIEW_TOOL = /^mcp__.*Claude_Browser__preview_start$/
 
-const describe = (value: unknown) => {
-  const text = typeof value === 'string' ? value : JSON.stringify(value)
-  return (text ?? String(value)).replace(/\s+/g, ' ').slice(0, 200)
+// The plugin never opens the pane itself: a tool call with no request from
+// the person behind it is refused in auto mode, rightly. It drafts the request
+// in the prompt box instead; the person reads it and sends it, and Claude
+// opens the pane like for any request they type. True when the draft is in.
+const draftPaneRequest = async ($: EngineInterface, url: string, path: string) => {
+  const hasPane = (await $.tool.list()).some(t => PREVIEW_TOOL.test(t.name))
+  if (!hasPane) return false
+  const filled = await $.prompt
+    .fill({ text: `Open ${url} in the browser pane (md-view viewer for ${baseName(path)})` })
+    .catch(() => ({ isFilled: false }))
+
+  return filled.isFilled
 }
 
-// Opens url in the browser pane. Returns null when it opened, else why not.
-const openInPane = async ($: EngineInterface, url: string): Promise<string | null> => {
-  const reasons: string[] = []
-
-  // The way Claude opens it: the browser's own tool, through the tool chain.
-  const tool = (await $.tool.list()).find(t => PREVIEW_TOOL.test(t.name))
-  if (tool) {
-    try {
-      const ran = await $.tool.call({ tool: tool.name as `mcp__${string}__${string}`, url })
-      if (ran.deny !== undefined) reasons.push(`${tool.name} was refused: ${describe(ran.deny)}`)
-      else if (ran.isError) reasons.push(`${tool.name} failed: ${describe(ran.result)}`)
-      else return null
-    } catch (err) {
-      reasons.push(`${tool.name} failed: ${describe(String(err))}`)
-    }
-  } else {
-    reasons.push('no browser pane tool is available in this session')
-  }
-
-  // Directly on the server, for setups where the tool is not listed.
-  try {
-    const result = await $.mcp.call(BROWSER, 'preview_start', { url })
-    if (result.isError !== true) return null
-    reasons.push(`${BROWSER} server: ${describe(result.content)}`)
-  } catch (err) {
-    reasons.push(`${BROWSER} server: ${describe(String(err))}`)
-  }
-
-  return reasons.join('; ')
+const openInDefaultBrowser = async ($: EngineInterface, url: string) => {
+  const isWindows = (await $.env.get('OS')) === 'Windows_NT'
+  const opener = isWindows
+    ? ['explorer.exe', url]
+    : [(await $.process.run(['uname'])).stdout.trim() === 'Darwin' ? 'open' : 'xdg-open', url]
+  await $.process.run(opener, { timeoutMs: 10_000 }).catch(() => undefined)
 }
 
 const doc = atom({ plugin: 'md-view', key: 'doc' } as const, null as ViewedDoc | null)
@@ -93,8 +77,9 @@ const startServer = async ($: EngineInterface, path: string) => {
   return url
 }
 
-// Opens the file in the browser pane, locked in the Markdown view; the default
-// browser when the pane cannot be reached (another surface, or it is off).
+// Starts the viewer for the file (locked in the Markdown view) and drafts the
+// request to show it in the browser pane; the default browser where the
+// session has no pane or no prompt box.
 const view = async ($: EngineInterface, file: string) => {
   const path = await absolute($, file)
   if (!(await $.fs.exists(path))) return `No such file: ${path}`
@@ -107,17 +92,12 @@ const view = async ($: EngineInterface, file: string) => {
   }
   await update($, doc, () => ({ file: path }))
 
-  const failure = await openInPane($, url)
-  if (failure === null) return `Viewing ${baseName(path)} in the browser pane. Unlock to edit; save with Ctrl+S.`
-  $.ui.log(`md-view: browser pane not opened: ${failure}`, { to: 'debug' })
+  if (await draftPaneRequest($, url, path)) {
+    return `The viewer for ${baseName(path)} is ready. Press Enter to send the request in your prompt box, and Claude opens it in the browser pane.`
+  }
+  await openInDefaultBrowser($, url)
 
-  const isWindows = (await $.env.get('OS')) === 'Windows_NT'
-  const opener = isWindows
-    ? ['explorer.exe', url]
-    : [(await $.process.run(['uname'])).stdout.trim() === 'Darwin' ? 'open' : 'xdg-open', url]
-  await $.process.run(opener, { timeoutMs: 10_000 }).catch(() => undefined)
-
-  return `Viewing ${baseName(path)} in your default browser at ${url}. The browser pane could not be opened: ${failure}`
+  return `Viewing ${baseName(path)} in your default browser at ${url}.`
 }
 
 export const register: Register = on => {
