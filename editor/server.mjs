@@ -1,4 +1,4 @@
-// Local editing server for md-preview's /md-edit, started by the hooks module
+// Local viewing and editing server for md-view's /md-view, started by the hooks module
 // with Node:  node server.mjs <file.md>
 //
 // It listens on 127.0.0.1 on a free port, prints "READY <port>" once listening,

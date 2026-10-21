@@ -1,5 +1,5 @@
 {
   "name": "md-view",
   "owner": { "name": "pietjb" },
-  "plugins": [{ "name": "md-preview", "source": "./" }]
+  "plugins": [{ "name": "md-view", "source": "./" }]
 }

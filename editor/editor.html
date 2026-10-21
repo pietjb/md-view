@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Edit: __TITLE__</title>
+<title>__TITLE__</title>
 <link rel="stylesheet" href="/assets/toastui-editor.css">
 <link rel="stylesheet" href="/assets/toastui-editor-dark.css">
 <style>
@@ -191,7 +191,6 @@
     $('lock').hidden = mode !== 'markdown';
     $('modeText').setAttribute('aria-pressed', String(mode === 'text'));
     $('modeMarkdown').setAttribute('aria-pressed', String(mode === 'markdown'));
-    try { localStorage.setItem('md-edit-mode', mode); } catch {}
   };
 
   const load = async () => {
@@ -246,7 +245,7 @@
         if (!dirty) await load();
         else showConflict('This file was changed on disk while you have unsaved edits.');
       }
-    } catch { setStatus('Editor server stopped. Run /md-edit again.', 'dirty'); return; }
+    } catch { setStatus('Editor server stopped. Run /md-view again.', 'dirty'); return; }
     setTimeout(watch, 3000);
   };
 
@@ -280,10 +279,9 @@
   });
   addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
-  let saved = null;
-  try { saved = localStorage.getItem('md-edit-mode'); } catch {}
+  // Always opens in the Markdown view, locked: /md-view is for viewing first.
   load()
-    .then(() => { setLocked(true); if (saved === 'text') setMode('text'); setTimeout(watch, 3000); })
+    .then(() => { setLocked(true); setTimeout(watch, 3000); })
     .catch(err => setStatus('Could not load the file: ' + err, 'dirty'));
 </script>
 </body>

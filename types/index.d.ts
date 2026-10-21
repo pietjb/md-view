@@ -1,10 +1,9 @@
-export type PreviewDoc = {
+export type ViewedDoc = {
   file: string
-  htmlPath: string
 }
 
 declare module 'claude-code' {
   interface PluginState {
-    'md-preview': { doc: PreviewDoc | null }
+    'md-view': { doc: ViewedDoc | null }
   }
 }
