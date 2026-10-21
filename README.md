@@ -10,11 +10,7 @@ A Claude Code plugin to view and edit Markdown files as formatted documents, rig
 
 Opens the file in Claude Desktop's browser pane as a formatted document, view only. The path can be absolute or relative to the session's folder.
 
-How it opens depends on your permission settings:
-
-- **One step**, when Claude Code permits md-view to open the pane: it just opens. In auto mode that needs the optional hook under [One-step opening](#one-step-opening).
-- **With one Enter**, otherwise: md-view puts a request in your prompt box, such as *"Open http://127.0.0.1:52344/ in the browser pane (md-view viewer for notes.md)"*. Press **Enter** to send it, and Claude opens the pane. In auto mode, Claude Code allows a tool call only when you asked for it, which is why the plugin can't skip this step on its own.
-- Outside Claude Desktop, where there's no browser pane, the file opens in your default browser.
+When the browser pane can't be used, the file opens in your default browser instead. This happens outside Claude Desktop, and in auto mode, where Claude Code doesn't let a plugin open the pane by itself.
 
 - `/md-view` with no file reopens the last file viewed.
 - `/md-view stop` closes the viewer's local server.
@@ -31,34 +27,6 @@ Save with **Ctrl+S** or the **Save** button. Saving writes back to the file.
 When you save from the Markdown view, the file keeps its own style: bullet character, list indentation, horizontal-rule marker, `<url>` autolinks and Windows line endings. YAML front matter is edited in its own box and saved back exactly. A visual edit can't keep everything, though: raw HTML tags are dropped, and table column padding is removed. Use the Text view when exact formatting matters.
 
 If the file changes on disk while it's open, the page reloads it, or warns you if you have unsaved edits.
-
-## One-step opening
-
-To have `/md-view` open the pane without the Enter step in auto mode, add the hook in [`extras/allow-local-preview.mjs`](extras/allow-local-preview.mjs) to your Claude Code settings yourself. A plugin can't change your permissions, by design.
-
-The hook approves Claude Desktop's `preview_start` browser tool only when it opens exactly `http://127.0.0.1:<port>/`, a page on your own machine, as md-view does. Every other call gets no decision from it, so auto mode checks those as usual: outside sites, URLs carrying extra data, starting dev servers, and the other browser tools. It isn't limited to md-view, though: Claude opening any page on `127.0.0.1` would also be approved.
-
-1. Copy `extras/allow-local-preview.mjs` to a folder of your own, for example `~/.claude/hooks/`.
-2. Add this to `~/.claude/settings.json`, using your path to the file. If the file already has a `hooks` section, add to it rather than replacing it.
-
-   ```json
-   {
-     "hooks": {
-       "PreToolUse": [
-         {
-           "matcher": "mcp__Claude_Browser__preview_start",
-           "hooks": [
-             { "type": "command", "command": "node", "args": ["C:/Users/you/.claude/hooks/allow-local-preview.mjs"] }
-           ]
-         }
-       ]
-     }
-   }
-   ```
-
-3. Start a new session.
-
-To turn it off, remove that entry.
 
 ## Install
 
