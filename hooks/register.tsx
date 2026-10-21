@@ -7,13 +7,26 @@ import type { ViewedDoc } from '../types'
 // mcp__Claude_Browser__preview_start (its prefix can differ by setup).
 const PREVIEW_TOOL = /^mcp__.*Claude_Browser__preview_start$/
 
-// The plugin never opens the pane itself: a tool call with no request from
-// the person behind it is refused in auto mode, rightly. It drafts the request
-// in the prompt box instead; the person reads it and sends it, and Claude
-// opens the pane like for any request they type. True when the draft is in.
+// Opens url in the pane through the browser's own tool, under the person's
+// permission settings. In auto mode a call with no request behind it is
+// refused, unless they set it up (extras/allow-local-preview.mjs, see the
+// README). Returns 'opened', 'refused' or 'no-pane'.
+const openInPane = async ($: EngineInterface, url: string) => {
+  const tool = (await $.tool.list()).find(t => PREVIEW_TOOL.test(t.name))
+  if (!tool) return 'no-pane' as const
+  try {
+    const ran = await $.tool.call({ tool: tool.name as `mcp__${string}__${string}`, url })
+
+    return ran.deny === undefined && ran.isError !== true ? ('opened' as const) : ('refused' as const)
+  } catch {
+    return 'refused' as const
+  }
+}
+
+// When the pane can't be opened directly, the request is drafted in the
+// prompt box; the person reads it and sends it, and Claude opens the pane like
+// for any request they type. True when the draft is in.
 const draftPaneRequest = async ($: EngineInterface, url: string, path: string) => {
-  const hasPane = (await $.tool.list()).some(t => PREVIEW_TOOL.test(t.name))
-  if (!hasPane) return false
   const filled = await $.prompt
     .fill({ text: `Open ${url} in the browser pane (md-view viewer for ${baseName(path)})` })
     .catch(() => ({ isFilled: false }))
@@ -77,9 +90,9 @@ const startServer = async ($: EngineInterface, path: string) => {
   return url
 }
 
-// Starts the viewer for the file (locked in the Markdown view) and drafts the
-// request to show it in the browser pane; the default browser where the
-// session has no pane or no prompt box.
+// Starts the viewer for the file (locked in the Markdown view) and shows it in
+// the browser pane: directly where permitted, else by drafting the request;
+// the default browser where the session has no pane or no prompt box.
 const view = async ($: EngineInterface, file: string) => {
   const path = await absolute($, file)
   if (!(await $.fs.exists(path))) return `No such file: ${path}`
@@ -92,8 +105,10 @@ const view = async ($: EngineInterface, file: string) => {
   }
   await update($, doc, () => ({ file: path }))
 
-  if (await draftPaneRequest($, url, path)) {
-    return `The viewer for ${baseName(path)} is ready. Press Enter to send the request in your prompt box, and Claude opens it in the browser pane.`
+  const pane = await openInPane($, url)
+  if (pane === 'opened') return `Viewing ${baseName(path)} in the browser pane. Unlock to edit; save with Ctrl+S.`
+  if (pane === 'refused' && (await draftPaneRequest($, url, path))) {
+    return `The viewer for ${baseName(path)} is ready. Press Enter to send the request in your prompt box, and Claude opens it in the browser pane. (To open it in one step, see "One-step opening" in md-view's README.)`
   }
   await openInDefaultBrowser($, url)
 
