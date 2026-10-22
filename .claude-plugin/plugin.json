@@ -1,6 +1,6 @@
 {
   "name": "md-view",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "View and edit Markdown files in Claude Desktop's browser pane with one command: /md-view",
   "types": "./types/index.d.ts"
 }

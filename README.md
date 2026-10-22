@@ -20,7 +20,7 @@ When the browser pane can't be used, the file opens in your default browser inst
 The page has two views, switched in its header:
 
 - **Markdown** (the default): the formatted document. It opens **locked** for viewing; click the lock to edit it visually. It locks again each time you switch back to it.
-- **Text**: the whole file exactly as it is on disk, front matter included. It saves exactly what you type.
+- **Text**: the whole file exactly as it is on disk, front matter included, with VS Code-style syntax colouring (Dark+ or Light+, following your system theme) and line numbers. Code blocks are coloured by language: JavaScript/TypeScript, JSON, CSS, HTML, Python, YAML, shell and PowerShell. It saves exactly what you type.
 
 Save with **Ctrl+S** or the **Save** button. Saving writes back to the file.
 

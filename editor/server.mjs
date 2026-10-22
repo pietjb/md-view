@@ -24,6 +24,7 @@ const MAX_BODY = 10 * 1024 * 1024
 const ASSETS = {
   'toastui-editor-all.min.js': 'text/javascript; charset=utf-8',
   'restore-style.js': 'text/javascript; charset=utf-8',
+  'codemirror-bundle.js': 'text/javascript; charset=utf-8',
   'toastui-editor.css': 'text/css; charset=utf-8',
   'toastui-editor-dark.css': 'text/css; charset=utf-8',
 }
