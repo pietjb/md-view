@@ -49,7 +49,8 @@ In the Claude Desktop app, where `/plugin` doesn't run: click **+** next to the 
 ## Requirements
 
 - Claude Code with plugin support. Outside Claude Desktop, the file opens in your default browser instead of the browser pane.
-- [Node.js](https://nodejs.org) on your `PATH`. The page is served by a small local server that listens only on `127.0.0.1` and can write only the file it was opened for.
+- Nothing else to install on Windows. The page is served by a small local server that listens only on `127.0.0.1` and can write only the file it was opened for. It runs on [Node.js](https://nodejs.org) when that's installed, and otherwise on Windows PowerShell, which every Windows machine has.
+- On macOS and Linux, the local server needs Node.js. Without it, `/md-view` opens the file read-only in your default browser.
 
 ## Licence
 

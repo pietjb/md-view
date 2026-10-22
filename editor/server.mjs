@@ -95,6 +95,7 @@ const server = createServer(async (req, res) => {
       if (!String(req.headers['content-type']).startsWith('application/json')) {
         return send(res, 415, { error: 'json only' })
       }
+      if (Number(req.headers['content-length']) > MAX_BODY) return send(res, 413, { error: 'too large' })
       const { text, baseMtime, force } = JSON.parse(await readBody(req))
       if (typeof text !== 'string') return send(res, 400, { error: 'text missing' })
 

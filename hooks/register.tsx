@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { ViewedDoc } from '../types'
+import { readOnlyPage } from './readonly'
 
 // Claude Desktop's built-in browser: the tool Claude calls as
 // mcp__Claude_Browser__preview_start (its prefix can differ by setup), on the
@@ -47,16 +48,29 @@ const unquote = (s: string) => s.trim().replace(/^["'](.*)["']$/, '$1')
 const absolute = async ($: EngineInterface, p: string) =>
   isAbsolute(p) ? p : `${(await $.session.cwd()).replace(/[\\/]$/, '')}/${p}`
 
-// Viewer servers by file: one Node process each, alive for the session (the
+// Viewer servers by file: one process each, alive for the session (the
 // module's unload ends the loop that holds it, and that kills it).
 const servers = new Map<string, { url: string; stop: () => void }>()
 
-const startServer = async ($: EngineInterface, path: string) => {
-  const key = path.replace(/\\/g, '/').toLowerCase()
-  const running = servers.get(key)
-  if (running) return running.url
+// The runtimes a viewer server can run on, in order: Node.js where installed,
+// else Windows PowerShell, which every Windows machine has.
+const serverCommands = async ($: EngineInterface, path: string) => {
+  const editor = `${$.plugin.root}/editor`
+  const commands = [['node', `${editor}/server.mjs`, path]]
+  if ((await $.env.get('OS')) === 'Windows_NT') {
+    commands.push([
+      'powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-File', `${editor}/server.ps1`, path,
+    ])
+  }
+  return commands
+}
 
-  const child = $.process.spawn({ argv: ['node', `${$.plugin.root}/editor/server.mjs`, path] })
+// Runs one server command; its URL once it prints READY, else undefined (the
+// runtime is missing or failed). A missing runtime fails at once.
+const trySpawn = async ($: EngineInterface, key: string, argv: string[]) => {
+  const child = $.process.spawn({ argv })
+  const stop = () => void child.return(undefined as never)
   let onReady: (port: number | undefined) => void = () => {}
   const ready = new Promise<number | undefined>(resolve => (onReady = resolve))
 
@@ -65,25 +79,55 @@ const startServer = async ($: EngineInterface, path: string) => {
       for await (const { stream, text } of child) {
         const port = stream === 'stdout' ? /READY (\d+)/.exec(text)?.[1] : undefined
         if (port) onReady(Number(port))
-        if (stream === 'stderr') $.ui.log(`md-view: ${text.trim()}`, { to: 'debug' })
+        if (stream === 'stderr') $.ui.log(`md-view (${argv[0]}): ${text.trim()}`, { to: 'debug' })
       }
     } catch (err) {
-      $.ui.log(`md-view: ${String(err)}`, { to: 'debug' })
+      $.ui.log(`md-view (${argv[0]}): ${String(err)}`, { to: 'debug' })
     } finally {
-      servers.delete(key)
+      if (servers.get(key)?.stop === stop) servers.delete(key)
       onReady(undefined)
     }
   })()
 
-  const port = await Promise.race([ready, $.clock.sleep(10_000).then(() => undefined)])
+  const port = await Promise.race([ready, $.clock.sleep(15_000).then(() => undefined)])
   if (!port) {
-    void child.return(undefined as never)
-    throw new Error('the viewer server did not start (is Node.js installed and on PATH?)')
+    stop()
+    return undefined
   }
   const url = `http://127.0.0.1:${port}/`
-  servers.set(key, { url, stop: () => void child.return(undefined as never) })
+  servers.set(key, { url, stop })
 
   return url
+}
+
+// The viewer's URL for the file, or undefined when no runtime could serve it.
+const startServer = async ($: EngineInterface, path: string) => {
+  const key = path.replace(/\\/g, '/').toLowerCase()
+  const running = servers.get(key)
+  if (running) return running.url
+
+  for (const argv of await serverCommands($, path)) {
+    const url = await trySpawn($, key, argv)
+    if (url) return url
+  }
+  return undefined
+}
+
+// Without a viewer server: the file read-only in the default browser, from a
+// self-contained page written to <temp>/md-view/.
+const openReadOnly = async ($: EngineInterface, path: string) => {
+  const assets = `${$.plugin.root}/editor/assets`
+  const [text, viewerJs, css, darkCss] = await Promise.all([
+    $.fs.read(path),
+    $.fs.read(`${assets}/toastui-editor-all.min.js`),
+    $.fs.read(`${assets}/toastui-editor.css`),
+    $.fs.read(`${assets}/toastui-editor-dark.css`),
+  ])
+  const tmp = ((await $.env.get('TEMP')) ?? (await $.env.get('TMPDIR')) ?? '/tmp').replace(/[\\/]$/, '')
+  const page = `${tmp}/md-view/${baseName(path).replace(/[^\w.-]/g, '_')}.html`
+  await $.fs.write(page, readOnlyPage(baseName(path), text, viewerJs, css, darkCss))
+  const isWindows = (await $.env.get('OS')) === 'Windows_NT'
+  await openInDefaultBrowser($, isWindows ? page.replace(/\//g, '\\') : page)
 }
 
 // Starts the viewer for the file (locked in the Markdown view) and shows it in
@@ -92,11 +136,14 @@ const view = async ($: EngineInterface, file: string) => {
   const path = await absolute($, file)
   if (!(await $.fs.exists(path))) return `No such file: ${path}`
 
-  let url: string
-  try {
-    url = await startServer($, path)
-  } catch (err) {
-    return `Could not open ${baseName(path)}: ${String(err)}`
+  const url = await startServer($, path)
+  if (!url) {
+    try {
+      await openReadOnly($, path)
+    } catch (err) {
+      return `Could not open ${baseName(path)}: ${String(err)}`
+    }
+    return `Opened ${baseName(path)} read-only in your default browser. To edit it in md-view, install Node.js (nodejs.org).`
   }
   await update($, doc, () => ({ file: path }))
 
